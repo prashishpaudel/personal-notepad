@@ -57,8 +57,8 @@ function formatDate(value: number) {
 }
 
 export default function Home() {
-  const [notes, setNotes] = useState<Note[]>(starterNotes);
-  const [activeId, setActiveId] = useState(starterNotes[0].id);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [activeId, setActiveId] = useState("");
   const [query, setQuery] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [fontSize, setFontSize] = useState(defaultFontSize);
@@ -80,10 +80,9 @@ export default function Home() {
       parsedNotes = null;
     }
 
-    if (parsedNotes?.length) {
-      setNotes(parsedNotes);
-      setActiveId(parsedNotes[0].id);
-    }
+    const loadedNotes = parsedNotes?.length ? parsedNotes : starterNotes;
+    setNotes(loadedNotes);
+    setActiveId(loadedNotes[0].id);
 
     if (savedTheme) {
       setTheme(savedTheme);
@@ -170,6 +169,10 @@ export default function Home() {
       const next = direction === "smaller" ? current - 1 : current + 1;
       return Math.min(maxFontSize, Math.max(minFontSize, next));
     });
+  }
+
+  if (!hydrated) {
+    return <main className="app-shell app-loading" aria-label="Loading notepad" />;
   }
 
   return (

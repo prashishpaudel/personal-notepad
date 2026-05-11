@@ -68,6 +68,10 @@ button {
   grid-template-columns: 0 1fr;
 }
 
+.app-loading {
+  background: var(--bg);
+}
+
 .sidebar-backdrop {
   display: none;
 }

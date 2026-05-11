@@ -13,6 +13,25 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function () {
+                try {
+                  var theme = localStorage.getItem("personal-notepad:theme");
+                  if (!theme && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+                    theme = "dark";
+                  }
+                  if (theme) {
+                    document.documentElement.dataset.theme = theme;
+                  }
+                } catch (error) {}
+              })();
+            `
+          }}
+        />
+      </head>
       <body>{children}</body>
     </html>
   );
