@@ -256,6 +256,35 @@ h1 {
   gap: 10px;
 }
 
+.mode-tabs {
+  align-items: center;
+  background: var(--panel-strong);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+}
+
+.mode-tabs button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 800;
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px;
+}
+
+.mode-tabs button.active {
+  background: var(--accent-weak);
+  color: var(--text);
+}
+
 .font-controls {
   align-items: center;
   background: var(--panel-strong);
@@ -317,6 +346,54 @@ h1 {
   padding: 30px 38px 38px;
   resize: none;
   width: 100%;
+}
+
+.preview-pane {
+  flex: 1;
+  line-height: 1.7;
+  min-height: 320px;
+  overflow: auto;
+  padding: 30px 38px 38px;
+}
+
+.preview-pane p {
+  margin: 0 0 18px;
+  white-space: pre-wrap;
+}
+
+.code-block {
+  background: color-mix(in srgb, var(--panel-strong) 86%, var(--text) 14%);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 0 0 22px;
+  overflow: hidden;
+}
+
+.code-block-header {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  display: flex;
+  font-size: 12px;
+  font-weight: 800;
+  gap: 8px;
+  padding: 9px 12px;
+  text-transform: uppercase;
+}
+
+.code-block pre {
+  margin: 0;
+  overflow-x: auto;
+  padding: 16px;
+}
+
+.code-block code {
+  color: var(--text);
+  font-family:
+    "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.92em;
+  line-height: 1.6;
+  white-space: pre;
 }
 
 .empty-state {
@@ -381,6 +458,14 @@ h1 {
     gap: 7px;
   }
 
+  .mode-tabs button {
+    padding: 0 8px;
+  }
+
+  .mode-tabs button span {
+    display: none;
+  }
+
   .font-controls span {
     min-width: 30px;
   }
@@ -403,6 +488,10 @@ h1 {
 
   .body-input {
     font-size: 17px;
+    padding: 24px 22px;
+  }
+
+  .preview-pane {
     padding: 24px 22px;
   }
 }
