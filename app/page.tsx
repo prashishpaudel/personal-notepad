@@ -1,11 +1,8 @@
 "use client";
 
 import {
-  Code2,
   Cloud,
   CloudOff,
-  Edit3,
-  Eye,
   Moon,
   Plus,
   Search,
@@ -17,7 +14,7 @@ import {
   PanelLeftOpen,
   Plus as PlusIcon
 } from "lucide-react";
-import { ClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { isSupabaseConfigured, NoteRow, supabase } from "@/lib/supabase";
 
 type Note = {
@@ -26,17 +23,6 @@ type Note = {
   body: string;
   updatedAt: number;
 };
-
-type PreviewSegment =
-  | {
-      content: string;
-      type: "text";
-    }
-  | {
-      content: string;
-      language: string;
-      type: "code";
-    };
 
 const themeKey = "personal-notepad:theme";
 const fontSizeKey = "personal-notepad:font-size";
@@ -62,81 +48,12 @@ function noteFromRow(row: NoteRow): Note {
   };
 }
 
-function detectCodeLanguage(value: string) {
-  const trimmed = value.trim();
-
-  if (/^\s*</m.test(trimmed)) {
-    return "html";
-  }
-
-  if (/\b(import|export|const|let|function|return|type|interface)\b/.test(trimmed)) {
-    return "tsx";
-  }
-
-  if (/\b(def|from|print|import)\b/.test(trimmed)) {
-    return "python";
-  }
-
-  if (/\b(select|insert|update|delete|from|where)\b/i.test(trimmed)) {
-    return "sql";
-  }
-
-  return "";
-}
-
-function looksLikeCode(value: string) {
-  const trimmed = value.trim();
-
-  if (!trimmed.includes("\n") || trimmed.startsWith("```")) {
-    return false;
-  }
-
-  return /[{};=<>]|\b(const|let|function|return|import|export|class|def|if|for|while)\b/.test(
-    trimmed
-  );
-}
-
-function parsePreview(body: string): PreviewSegment[] {
-  const segments: PreviewSegment[] = [];
-  const fencePattern = /```(\w+)?\n([\s\S]*?)```/g;
-  let cursor = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = fencePattern.exec(body)) !== null) {
-    if (match.index > cursor) {
-      segments.push({
-        content: body.slice(cursor, match.index),
-        type: "text"
-      });
-    }
-
-    segments.push({
-      content: match[2].replace(/\n$/, ""),
-      language: match[1] ?? "",
-      type: "code"
-    });
-
-    cursor = match.index + match[0].length;
-  }
-
-  if (cursor < body.length) {
-    segments.push({
-      content: body.slice(cursor),
-      type: "text"
-    });
-  }
-
-  return segments.length ? segments : [{ content: "", type: "text" }];
-}
-
 export default function Home() {
-  const bodyInputRef = useRef<HTMLTextAreaElement>(null);
   const pendingSaveRef = useRef<Partial<Pick<Note, "title" | "body">>>({});
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [activeId, setActiveId] = useState("");
   const [query, setQuery] = useState("");
-  const [editorMode, setEditorMode] = useState<"edit" | "preview">("edit");
   const [syncStatus, setSyncStatus] = useState<"idle" | "loading" | "saving" | "error">(
     "loading"
   );
@@ -235,10 +152,6 @@ export default function Home() {
   }, [notes, query]);
 
   const activeNote = notes.find((note) => note.id === activeId) ?? notes[0];
-  const previewSegments = useMemo(
-    () => parsePreview(activeNote?.body ?? ""),
-    [activeNote?.body]
-  );
 
   async function addNote() {
     if (!supabase) {
@@ -374,35 +287,6 @@ export default function Home() {
     });
   }
 
-  function handleBodyPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
-    if (!activeNote) {
-      return;
-    }
-
-    const pastedText = event.clipboardData.getData("text");
-
-    if (!looksLikeCode(pastedText)) {
-      return;
-    }
-
-    event.preventDefault();
-
-    const textarea = event.currentTarget;
-    const selectionStart = textarea.selectionStart;
-    const selectionEnd = textarea.selectionEnd;
-    const language = detectCodeLanguage(pastedText);
-    const codeBlock = `\`\`\`${language}\n${pastedText.trimEnd()}\n\`\`\``;
-    const nextBody = `${activeNote.body.slice(0, selectionStart)}${codeBlock}${activeNote.body.slice(selectionEnd)}`;
-
-    updateActiveNote({ body: nextBody });
-
-    requestAnimationFrame(() => {
-      const cursor = selectionStart + codeBlock.length;
-      bodyInputRef.current?.setSelectionRange(cursor, cursor);
-      bodyInputRef.current?.focus();
-    });
-  }
-
   if (!hydrated) {
     return <main className="app-shell app-loading" aria-label="Loading notepad" />;
   }
@@ -478,24 +362,6 @@ export default function Home() {
           </div>
 
           <div className="toolbar-actions">
-            <div className="mode-tabs" aria-label="Editor mode">
-              <button
-                className={editorMode === "edit" ? "active" : ""}
-                onClick={() => setEditorMode("edit")}
-                aria-label="Edit note"
-              >
-                <Edit3 size={16} />
-                <span>Edit</span>
-              </button>
-              <button
-                className={editorMode === "preview" ? "active" : ""}
-                onClick={() => setEditorMode("preview")}
-                aria-label="Preview note"
-              >
-                <Eye size={16} />
-                <span>Preview</span>
-              </button>
-            </div>
             <div className="font-controls" aria-label="Editor font size">
               <button
                 className="icon-button compact"
@@ -552,47 +418,14 @@ export default function Home() {
               placeholder="Untitled note"
             />
             <p className="updated">Updated {formatDate(activeNote.updatedAt)}</p>
-            {editorMode === "edit" ? (
-              <textarea
-                ref={bodyInputRef}
-                className="body-input"
-                style={{ fontSize }}
-                value={activeNote.body}
-                onChange={(event) => updateActiveNote({ body: event.target.value })}
-                onPaste={handleBodyPaste}
-                aria-label="Note body"
-                placeholder="Start typing..."
-              />
-            ) : (
-              <div
-                className="preview-pane"
-                style={{ fontSize }}
-                aria-label="Note preview"
-              >
-                {previewSegments.map((segment, index) =>
-                  segment.type === "code" ? (
-                    <div className="code-block" key={`${segment.type}-${index}`}>
-                      <div className="code-block-header">
-                        <Code2 size={15} />
-                        <span>{segment.language || "code"}</span>
-                      </div>
-                      <pre>
-                        <code>{segment.content}</code>
-                      </pre>
-                    </div>
-                  ) : (
-                    segment.content
-                      .split(/\n{2,}/)
-                      .filter((paragraph) => paragraph.trim().length > 0)
-                      .map((paragraph, paragraphIndex) => (
-                        <p key={`${segment.type}-${index}-${paragraphIndex}`}>
-                          {paragraph}
-                        </p>
-                      ))
-                  )
-                )}
-              </div>
-            )}
+            <textarea
+              className="body-input"
+              style={{ fontSize }}
+              value={activeNote.body}
+              onChange={(event) => updateActiveNote({ body: event.target.value })}
+              aria-label="Note body"
+              placeholder="Start typing..."
+            />
           </article>
         ) : (
           <div className="empty-state">
