@@ -292,6 +292,14 @@ export default function Home() {
       return;
     }
 
+    const shouldDelete = window.confirm(
+      `Delete "${activeNote.title || "Untitled note"}"? This cannot be undone.`
+    );
+
+    if (!shouldDelete) {
+      return;
+    }
+
     if (!supabase) {
       setSyncStatus("error");
       setSyncMessage("Supabase is not configured.");
