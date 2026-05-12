@@ -2,6 +2,8 @@
 
 import {
   Code2,
+  Cloud,
+  CloudOff,
   Edit3,
   Eye,
   Moon,
@@ -16,6 +18,7 @@ import {
   Plus as PlusIcon
 } from "lucide-react";
 import { ClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { isSupabaseConfigured, NoteRow, supabase } from "@/lib/supabase";
 
 type Note = {
   id: string;
@@ -35,31 +38,11 @@ type PreviewSegment =
       type: "code";
     };
 
-const notesKey = "personal-notepad:notes";
 const themeKey = "personal-notepad:theme";
 const fontSizeKey = "personal-notepad:font-size";
 const minFontSize = 14;
 const maxFontSize = 24;
 const defaultFontSize = 14;
-
-const starterNotes: Note[] = [
-  {
-    id: "welcome",
-    title: "Welcome",
-    body:
-      "This notepad saves notes in your browser. Create a note, search your list, and switch between light and dark mode from the toolbar.",
-    updatedAt: 1735689600000
-  }
-];
-
-function createNote(): Note {
-  return {
-    id: crypto.randomUUID(),
-    title: "Untitled note",
-    body: "",
-    updatedAt: Date.now()
-  };
-}
 
 function formatDate(value: number) {
   return new Intl.DateTimeFormat("en", {
@@ -68,6 +51,15 @@ function formatDate(value: number) {
     hour: "numeric",
     minute: "2-digit"
   }).format(value);
+}
+
+function noteFromRow(row: NoteRow): Note {
+  return {
+    body: row.body,
+    id: row.id,
+    title: row.title,
+    updatedAt: new Date(row.updated_at).getTime()
+  };
 }
 
 function detectCodeLanguage(value: string) {
@@ -139,33 +131,27 @@ function parsePreview(body: string): PreviewSegment[] {
 
 export default function Home() {
   const bodyInputRef = useRef<HTMLTextAreaElement>(null);
+  const pendingSaveRef = useRef<Partial<Pick<Note, "title" | "body">>>({});
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [activeId, setActiveId] = useState("");
   const [query, setQuery] = useState("");
   const [editorMode, setEditorMode] = useState<"edit" | "preview">("edit");
+  const [syncStatus, setSyncStatus] = useState<"idle" | "loading" | "saving" | "error">(
+    "loading"
+  );
+  const [syncMessage, setSyncMessage] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [fontSize, setFontSize] = useState(defaultFontSize);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    const savedNotes = window.localStorage.getItem(notesKey);
     const savedTheme = window.localStorage.getItem(themeKey) as
       | "light"
       | "dark"
       | null;
     const savedFontSize = Number(window.localStorage.getItem(fontSizeKey));
-    let parsedNotes: Note[] | null = null;
-
-    try {
-      parsedNotes = savedNotes ? (JSON.parse(savedNotes) as Note[]) : null;
-    } catch {
-      parsedNotes = null;
-    }
-
-    const loadedNotes = parsedNotes?.length ? parsedNotes : starterNotes;
-    setNotes(loadedNotes);
-    setActiveId(loadedNotes[0].id);
 
     if (savedTheme) {
       setTheme(savedTheme);
@@ -181,6 +167,41 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    async function loadNotes() {
+      if (!hydrated) {
+        return;
+      }
+
+      if (!isSupabaseConfigured || !supabase) {
+        setSyncStatus("error");
+        setSyncMessage("Add Supabase env vars to sync shared notes.");
+        return;
+      }
+
+      setSyncStatus("loading");
+      setSyncMessage("");
+
+      const { data, error } = await supabase
+        .from("notes")
+        .select("id,title,body,updated_at")
+        .order("updated_at", { ascending: false });
+
+      if (error) {
+        setSyncStatus("error");
+        setSyncMessage(error.message);
+        return;
+      }
+
+      const loadedNotes = (data ?? []).map(noteFromRow);
+      setNotes(loadedNotes);
+      setActiveId((current) => current || loadedNotes[0]?.id || "");
+      setSyncStatus("idle");
+    }
+
+    loadNotes();
+  }, [hydrated]);
+
+  useEffect(() => {
     document.documentElement.dataset.theme = theme;
     if (hydrated) {
       window.localStorage.setItem(themeKey, theme);
@@ -189,15 +210,17 @@ export default function Home() {
 
   useEffect(() => {
     if (hydrated) {
-      window.localStorage.setItem(notesKey, JSON.stringify(notes));
-    }
-  }, [hydrated, notes]);
-
-  useEffect(() => {
-    if (hydrated) {
       window.localStorage.setItem(fontSizeKey, String(fontSize));
     }
   }, [fontSize, hydrated]);
+
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const filteredNotes = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -217,11 +240,33 @@ export default function Home() {
     [activeNote?.body]
   );
 
-  function addNote() {
-    const note = createNote();
+  async function addNote() {
+    if (!supabase) {
+      setSyncStatus("error");
+      setSyncMessage("Supabase is not configured.");
+      return;
+    }
+
+    setSyncStatus("saving");
+
+    const { data, error } = await supabase
+      .from("notes")
+      .insert({ body: "", title: "Untitled note" })
+      .select("id,title,body,updated_at")
+      .single();
+
+    if (error) {
+      setSyncStatus("error");
+      setSyncMessage(error.message);
+      return;
+    }
+
+    const note = noteFromRow(data);
     setNotes((current) => [note, ...current]);
     setActiveId(note.id);
     setSidebarOpen(true);
+    setSyncStatus("idle");
+    setSyncMessage("");
   }
 
   function updateActiveNote(values: Partial<Pick<Note, "title" | "body">>) {
@@ -229,26 +274,89 @@ export default function Home() {
       return;
     }
 
+    const noteId = activeNote.id;
+
     setNotes((current) =>
       current.map((note) =>
-        note.id === activeNote.id
+        note.id === noteId
           ? { ...note, ...values, updatedAt: Date.now() }
           : note
       )
     );
+
+    persistNote(noteId, values);
   }
 
-  function deleteActiveNote() {
+  async function deleteActiveNote() {
     if (!activeNote) {
       return;
     }
 
-    setNotes((current) => {
-      const remaining = current.filter((note) => note.id !== activeNote.id);
-      const nextNotes = remaining.length ? remaining : [createNote()];
-      setActiveId(nextNotes[0].id);
-      return nextNotes;
-    });
+    if (!supabase) {
+      setSyncStatus("error");
+      setSyncMessage("Supabase is not configured.");
+      return;
+    }
+
+    const noteId = activeNote.id;
+    const nextNotes = notes.filter((note) => note.id !== noteId);
+    setSyncStatus("saving");
+    setNotes(nextNotes);
+    setActiveId(nextNotes[0]?.id || "");
+
+    const { error } = await supabase.from("notes").delete().eq("id", noteId);
+
+    if (error) {
+      setSyncStatus("error");
+      setSyncMessage(error.message);
+      return;
+    }
+
+    setSyncStatus("idle");
+    setSyncMessage("");
+  }
+
+  function persistNote(id: string, values: Partial<Pick<Note, "title" | "body">>) {
+    if (!supabase) {
+      return;
+    }
+
+    const client = supabase;
+    pendingSaveRef.current = { ...pendingSaveRef.current, ...values };
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    setSyncStatus("saving");
+    setSyncMessage("");
+
+    saveTimeoutRef.current = setTimeout(async () => {
+      const pendingValues = pendingSaveRef.current;
+      pendingSaveRef.current = {};
+      const updatedAt = new Date().toISOString();
+      const { data, error } = await client
+        .from("notes")
+        .update({ ...pendingValues, updated_at: updatedAt })
+        .eq("id", id)
+        .select("id,title,body,updated_at")
+        .single();
+
+      if (error) {
+        setSyncStatus("error");
+        setSyncMessage(error.message);
+        return;
+      }
+
+      const savedNote = noteFromRow(data);
+      setNotes((current) => {
+        const nextNotes = current.map((note) =>
+          note.id === savedNote.id ? { ...note, updatedAt: savedNote.updatedAt } : note
+        );
+        return [...nextNotes].sort((first, second) => second.updatedAt - first.updatedAt);
+      });
+      setSyncStatus("idle");
+    }, 600);
   }
 
   function changeFontSize(direction: "smaller" | "larger") {
@@ -351,8 +459,14 @@ export default function Home() {
           </button>
 
           <div className="toolbar-status">
-            <FileText size={18} />
-            <span>{notes.length} {notes.length === 1 ? "note" : "notes"}</span>
+            {syncStatus === "error" ? <CloudOff size={18} /> : <Cloud size={18} />}
+            <span>
+              {syncStatus === "loading"
+                ? "Loading"
+                : syncStatus === "saving"
+                  ? "Saving"
+                  : `${notes.length} ${notes.length === 1 ? "note" : "notes"}`}
+            </span>
           </div>
 
           <div className="toolbar-actions">
@@ -410,7 +524,17 @@ export default function Home() {
           </div>
         </header>
 
-        {activeNote ? (
+        {syncStatus === "error" ? (
+          <div className="empty-state">
+            <CloudOff size={34} />
+            <p>{syncMessage || "Unable to sync notes."}</p>
+          </div>
+        ) : syncStatus === "loading" ? (
+          <div className="empty-state">
+            <FileText size={34} />
+            <p>Loading notes</p>
+          </div>
+        ) : activeNote ? (
           <article className="editor">
             <input
               className="title-input"
@@ -465,7 +589,7 @@ export default function Home() {
         ) : (
           <div className="empty-state">
             <FileText size={34} />
-            <p>No note selected</p>
+            <p>No notes yet</p>
           </div>
         )}
       </section>
